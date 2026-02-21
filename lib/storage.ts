@@ -19,6 +19,7 @@ export const STORAGE_KEYS = {
     aiModel: "next-ai-draw-io-ai-model",
 
     // Multi-model configuration
+    saveToLocal: "next-ai-draw-io-save-to-local",
     modelConfigs: "next-ai-draw-io-model-configs",
     selectedModelId: "next-ai-draw-io-selected-model-id",
 

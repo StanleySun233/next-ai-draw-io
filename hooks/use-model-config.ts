@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { getApiEndpoint } from "@/lib/base-path"
 import type { FlattenedServerModel } from "@/lib/server-model-config"
 import { STORAGE_KEYS } from "@/lib/storage"
@@ -129,13 +129,33 @@ export interface UseModelConfigReturn {
     ) => void
     deleteModel: (providerId: string, modelConfigId: string) => void
     resetConfig: () => void
+    syncFromServer: (config: MultiModelConfig) => void
+    flushToServer: () => void
+    deleteFromServer: () => void
+    saveToLocal: boolean
+    setSaveToLocal: (v: boolean) => void
 }
 
-export function useModelConfig(): UseModelConfigReturn {
+export function useModelConfig(isLoggedIn = false): UseModelConfigReturn {
     const [config, setConfig] = useState<MultiModelConfig>(createEmptyConfig)
     const [isLoaded, setIsLoaded] = useState(false)
     const [serverModels, setServerModels] = useState<FlattenedServerModel[]>([])
     const [serverLoaded, setServerLoaded] = useState(false)
+    const isLoggedInRef = useRef(isLoggedIn)
+    useEffect(() => {
+        isLoggedInRef.current = isLoggedIn
+    }, [isLoggedIn])
+
+    const [saveToLocal, setSaveToLocalState] = useState(() => {
+        if (typeof window === "undefined") return true
+        const v = localStorage.getItem(STORAGE_KEYS.saveToLocal)
+        return v === null ? true : v === "true"
+    })
+
+    const setSaveToLocal = useCallback((v: boolean) => {
+        setSaveToLocalState(v)
+        localStorage.setItem(STORAGE_KEYS.saveToLocal, String(v))
+    }, [])
 
     // Load client config on mount
     useEffect(() => {
@@ -184,12 +204,55 @@ export function useModelConfig(): UseModelConfigReturn {
             })
     }, [])
 
+    const serverSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    const syncToServer = useCallback((cfg: MultiModelConfig) => {
+        fetch(getApiEndpoint("/api/user/model-config"), {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ config: cfg }),
+        }).catch(() => {})
+    }, [])
+
+    const saveToLocalRef = useRef(saveToLocal)
+    useEffect(() => {
+        saveToLocalRef.current = saveToLocal
+    }, [saveToLocal])
+
+    const flushToServer = useCallback(() => {
+        if (!isLoggedInRef.current || !saveToLocalRef.current) return
+        if (serverSyncTimer.current) {
+            clearTimeout(serverSyncTimer.current)
+            serverSyncTimer.current = null
+        }
+        syncToServer(configRef.current)
+    }, [syncToServer])
+
+    const deleteFromServer = useCallback(() => {
+        fetch(getApiEndpoint("/api/user/model-config"), {
+            method: "DELETE",
+        }).catch(() => {})
+    }, [])
+
+    const configRef = useRef(config)
+    useEffect(() => {
+        configRef.current = config
+    }, [config])
+
     // Save config whenever it changes (after initial load)
     useEffect(() => {
         if (isLoaded) {
             saveConfig(config)
+            if (isLoggedInRef.current && saveToLocal) {
+                if (serverSyncTimer.current)
+                    clearTimeout(serverSyncTimer.current)
+                serverSyncTimer.current = setTimeout(
+                    () => syncToServer(config),
+                    5000,
+                )
+            }
         }
-    }, [config, isLoaded])
+    }, [config, isLoaded, saveToLocal, syncToServer])
 
     // Derived state
     const userModels = flattenModels(config)
@@ -348,6 +411,11 @@ export function useModelConfig(): UseModelConfigReturn {
         setConfig(createEmptyConfig())
     }, [])
 
+    const syncFromServer = useCallback((serverConfig: MultiModelConfig) => {
+        setConfig(serverConfig)
+        saveConfig(serverConfig)
+    }, [])
+
     return {
         config,
         isLoaded: isLoaded && serverLoaded,
@@ -364,6 +432,11 @@ export function useModelConfig(): UseModelConfigReturn {
         updateModel,
         deleteModel,
         resetConfig,
+        syncFromServer,
+        flushToServer,
+        deleteFromServer,
+        saveToLocal,
+        setSaveToLocal,
     }
 }
 

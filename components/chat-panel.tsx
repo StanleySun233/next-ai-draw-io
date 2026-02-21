@@ -24,7 +24,9 @@ import { ChatInput } from "@/components/chat-input"
 import Image from "@/components/image-with-basepath"
 import { ModelConfigDialog } from "@/components/model-config-dialog"
 import { SettingsDialog } from "@/components/settings-dialog"
+import { UserMenu } from "@/components/user-menu"
 import { useDiagram } from "@/contexts/diagram-context"
+import { useAuth } from "@/hooks/use-auth"
 import { useDiagramToolHandlers } from "@/hooks/use-diagram-tool-handlers"
 import { useDictionary } from "@/hooks/use-dictionary"
 import { getSelectedAIConfig, useModelConfig } from "@/hooks/use-model-config"
@@ -168,8 +170,23 @@ export default function ChatPanel({
     const [showSettingsDialog, setShowSettingsDialog] = useState(false)
     const [showModelConfigDialog, setShowModelConfigDialog] = useState(false)
 
+    // Auth hook
+    const auth = useAuth()
+
     // Model configuration hook
-    const modelConfig = useModelConfig()
+    const modelConfig = useModelConfig(!!auth.user)
+
+    // Sync model config from server on login/page-load
+    useEffect(() => {
+        if (!auth.user || auth.isLoading || !modelConfig.saveToLocal) return
+        fetch(getApiEndpoint("/api/user/model-config"))
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+                if (data?.config) modelConfig.syncFromServer(data.config)
+            })
+            .catch(() => {})
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [auth.user])
 
     // Session manager for chat history (pass URL session ID for restoration)
     const sessionManager = useSessionManager({ initialSessionId: urlSessionId })
@@ -1299,6 +1316,11 @@ export default function ChatPanel({
                         </div>
                     </button>
                     <div className="flex items-center gap-1 justify-end overflow-visible">
+                        <UserMenu
+                            auth={auth}
+                            onLoginSuccess={modelConfig.syncFromServer}
+                            onLogout={modelConfig.resetConfig}
+                        />
                         <ButtonWithTooltip
                             tooltipContent={dict.nav.newChat}
                             variant="ghost"
@@ -1422,6 +1444,7 @@ export default function ChatPanel({
                 open={showModelConfigDialog}
                 onOpenChange={setShowModelConfigDialog}
                 modelConfig={modelConfig}
+                isLoggedIn={!!auth.user}
             />
         </div>
     )
