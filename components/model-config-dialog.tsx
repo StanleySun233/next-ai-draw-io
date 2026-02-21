@@ -61,6 +61,7 @@ interface ModelConfigDialogProps {
     open: boolean
     onOpenChange: (open: boolean) => void
     modelConfig: UseModelConfigReturn
+    isLoggedIn?: boolean
 }
 
 type ValidationStatus = "idle" | "validating" | "success" | "error"
@@ -156,6 +157,7 @@ export function ModelConfigDialog({
     open,
     onOpenChange,
     modelConfig,
+    isLoggedIn = false,
 }: ModelConfigDialogProps) {
     const dict = useDictionary()
     const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
@@ -172,6 +174,9 @@ export function ModelConfigDialog({
     > | null>(null)
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
     const [deleteConfirmText, setDeleteConfirmText] = useState("")
+    const [serverSyncConfirm, setServerSyncConfirm] = useState<
+        "enable" | "disable" | null
+    >(null)
     const [validatingModelIndex, setValidatingModelIndex] = useState<
         number | null
     >(null)
@@ -393,7 +398,13 @@ export function ModelConfigDialog({
     }
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog
+            open={open}
+            onOpenChange={(v) => {
+                if (!v) modelConfig.flushToServer()
+                onOpenChange(v)
+            }}
+        >
             <DialogContent className="sm:max-w-4xl h-[80vh] max-h-[800px] overflow-hidden flex flex-col gap-0 p-0">
                 {/* Header */}
                 <DialogHeader className="px-6 pt-6 pb-4 shrink-0">
@@ -1659,24 +1670,45 @@ export function ModelConfigDialog({
                 {/* Footer */}
                 <div className="px-6 py-3 border-t border-border-subtle bg-surface-1/30 shrink-0">
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <Switch
-                                id="show-unvalidated-models"
-                                checked={modelConfig.showUnvalidatedModels}
-                                onCheckedChange={
-                                    modelConfig.setShowUnvalidatedModels
-                                }
-                            />
-                            <Label
-                                htmlFor="show-unvalidated-models"
-                                className="text-xs text-muted-foreground cursor-pointer"
-                            >
-                                {dict.modelConfig.showUnvalidatedModels}
-                            </Label>
+                        <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-2">
+                                <Switch
+                                    id="show-unvalidated-models"
+                                    checked={modelConfig.showUnvalidatedModels}
+                                    onCheckedChange={
+                                        modelConfig.setShowUnvalidatedModels
+                                    }
+                                />
+                                <Label
+                                    htmlFor="show-unvalidated-models"
+                                    className="text-xs text-muted-foreground cursor-pointer"
+                                >
+                                    {dict.modelConfig.showUnvalidatedModels}
+                                </Label>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Switch
+                                    id="save-to-server"
+                                    checked={modelConfig.saveToLocal}
+                                    onCheckedChange={(v) =>
+                                        setServerSyncConfirm(
+                                            v ? "enable" : "disable",
+                                        )
+                                    }
+                                />
+                                <Label
+                                    htmlFor="save-to-server"
+                                    className={`text-xs text-muted-foreground cursor-pointer ${!isLoggedIn ? "line-through" : ""}`}
+                                >
+                                    存储到服务器
+                                </Label>
+                            </div>
                         </div>
                         <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                             <Key className="h-3 w-3" />
-                            {dict.modelConfig.apiKeyStored}
+                            {modelConfig.saveToLocal
+                                ? "API 密钥存储在网站服务器"
+                                : "密钥存储在您的浏览器本地"}
                         </p>
                     </div>
                 </div>
@@ -1756,6 +1788,46 @@ export function ModelConfigDialog({
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
                         >
                             {dict.modelConfig.delete}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Server sync confirmation */}
+            <AlertDialog
+                open={serverSyncConfirm !== null}
+                onOpenChange={(o) => !o && setServerSyncConfirm(null)}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            {serverSyncConfirm === "enable"
+                                ? "上传 API 密钥"
+                                : "删除服务器数据"}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {serverSyncConfirm === "enable"
+                                ? "即将上传所有 API 密钥至服务器，确认继续？"
+                                : "即将删除服务器存储的所有配置信息，确认继续？"}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>
+                            {dict.modelConfig.cancel}
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={() => {
+                                if (serverSyncConfirm === "enable") {
+                                    modelConfig.setSaveToLocal(true)
+                                    modelConfig.flushToServer()
+                                } else {
+                                    modelConfig.setSaveToLocal(false)
+                                    modelConfig.deleteFromServer()
+                                }
+                                setServerSyncConfirm(null)
+                            }}
+                        >
+                            确认
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

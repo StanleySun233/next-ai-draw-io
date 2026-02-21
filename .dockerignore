@@ -58,3 +58,4 @@ docker-compose*.yml
 .cache
 .turbo
 
+/data
